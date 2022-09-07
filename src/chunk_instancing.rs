@@ -17,12 +17,31 @@ use bevy::{
         Extract, RenderApp, RenderStage,
     },
 };
-
 use rand::Rng;
-
-use crate::camera::orbit::OrbitCamera;
-
 use super::{Chunk, DistanceCulling};
+
+
+pub struct ChunkInstancingPlugin;
+
+impl Plugin for ChunkInstancingPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_system(chunk_distance_culling);
+
+        app.sub_app_mut(RenderApp)
+            .add_render_command::<Transparent3d, DrawCustom>()
+            .init_resource::<CustomPipeline>()
+            .init_resource::<SpecializedMeshPipelines<CustomPipeline>>()
+            .add_system_to_stage(RenderStage::Extract, extract_chunk_instancings)
+            .add_system_to_stage(
+                RenderStage::Prepare,
+                prepare_chunk_instancing_instance_buffers,
+            )
+            .add_system_to_stage(RenderStage::Prepare, prepare_textures_bind_group)
+            .add_system_to_stage(RenderStage::Prepare, prepare_grass_chunk_bind_group)
+            .add_system_to_stage(RenderStage::Queue, queue_custom);
+    }
+}
+
 
 //Bundle
 #[derive(Bundle, Debug, Default)]
@@ -96,26 +115,6 @@ impl ChunkInstancing {
     }
 }
 
-pub struct ChunkInstancingPlugin;
-
-impl Plugin for ChunkInstancingPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_system(chunk_distance_culling);
-
-        app.sub_app_mut(RenderApp)
-            .add_render_command::<Transparent3d, DrawCustom>()
-            .init_resource::<CustomPipeline>()
-            .init_resource::<SpecializedMeshPipelines<CustomPipeline>>()
-            .add_system_to_stage(RenderStage::Extract, extract_chunk_instancings)
-            .add_system_to_stage(
-                RenderStage::Prepare,
-                prepare_chunk_instancing_instance_buffers,
-            )
-            .add_system_to_stage(RenderStage::Prepare, prepare_textures_bind_group)
-            .add_system_to_stage(RenderStage::Prepare, prepare_grass_chunk_bind_group)
-            .add_system_to_stage(RenderStage::Queue, queue_custom);
-    }
-}
 
 // ██████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 // █░░░░░░░░░░░░░░█░░░░░░░░██░░░░░░░░█░░░░░░░░░░░░░░█░░░░░░░░░░░░░░░░███░░░░░░░░░░░░░░█░░░░░░░░░░░░░░█░░░░░░░░░░░░░░█

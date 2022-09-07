@@ -1,6 +1,8 @@
+mod helper;
+
 use bevy::{
     asset::AssetServerSettings,
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+
     gltf::{Gltf, GltfMesh},
     math::prelude::*,
     math::{vec2, Vec3A},
@@ -13,18 +15,17 @@ use bevy::{
     },
 };
 
+use helper::HelperPlugin;
 use itertools::Itertools;
+use sly_camera_controller::*;
 
 use bevy_efficient_forest_rendering::{
-    camera::orbit::{OrbitCamera, OrbitCameraPlugin},
-    rendering::{
-        chunk_grass::{
-            get_grass_straw_mesh, ChunkGrass, ChunkGrassBundle, ChunkGrassPlugin, GridConfig,
-            GrowthTextures,
-        },
-        chunk_instancing::{ChunkInstancing, ChunkInstancingBundle, ChunkInstancingPlugin},
-        Chunk, DistanceCulling,
+    chunk_grass::{
+        get_grass_straw_mesh, ChunkGrass, ChunkGrassBundle, ChunkGrassPlugin, GridConfig,
+        GrowthTextures,
     },
+    chunk_instancing::{ChunkInstancing, ChunkInstancingBundle, ChunkInstancingPlugin},
+    Chunk, DistanceCulling,
 };
 
 use bevy_asset_loader::prelude::*;
@@ -87,10 +88,10 @@ fn main() {
             ..default()
         })
         .add_plugins(DefaultPlugins)
-        .add_plugin(OrbitCameraPlugin)
-        .add_plugin(LogDiagnosticsPlugin::default())
-        .add_plugin(FrameTimeDiagnosticsPlugin::default())
-        .insert_resource(GrowthTextures::default())
+        .add_plugin(CameraControllerPlugin)
+        //.add_plugin(LogDiagnosticsPlugin::default())
+        //.add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .init_resource::<GrowthTextures>()
         .insert_resource(GridConfig {
             grid_center_xy: [0.0, 0.0],
             grid_half_extents: [
@@ -100,7 +101,10 @@ fn main() {
         })
         .add_plugin(ChunkInstancingPlugin)
         .add_plugin(ChunkGrassPlugin)
+        // shared helper plugin for examples
+        .add_plugin(HelperPlugin)
         .add_enter_system(GameState::InGame, setup)
+
         .run();
 }
 
@@ -114,11 +118,7 @@ fn setup(
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     grid_config: Res<GridConfig>,
-    mut growth_texture: ResMut<GrowthTextures>,
 ) {
-    //Growth Textures
-    *growth_texture = GrowthTextures::new(&mut images);
-
     //light
     // commands.insert_resource(AmbientLight {
     //     color: Color::WHITE,
@@ -355,17 +355,6 @@ fn setup(
         .spawn_bundle(Camera3dBundle {
             ..Default::default()
         })
-        .insert(OrbitCamera {
-            x_angle: 45.0_f32.to_radians(),
-            y_angle: 45.0_f32.to_radians(),
-            max_center: Vec3::splat(1000.0), //Assume square map
-            min_center: Vec3::splat(-1000.0),
-            distance: 5.0,
-            max_distance: 100.0,
-            pan_sensitivity: 1.5,
-            max_y_angle: 80.0_f32.to_radians(),
-            min_y_angle: 5.0_f32.to_radians(),
-            ..Default::default()
-        })
+        .insert(CameraController::default())
         .insert(Name::new("Camera"));
 }

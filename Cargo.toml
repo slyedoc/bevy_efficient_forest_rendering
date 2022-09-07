@@ -7,20 +7,21 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.8.0"
+bevy = "0.8"
 bytemuck = "1.11.0"
-bevy_pbr = "0.8.0"
 itertools = "*"
 rand = "*"
 # bevy_shader_utils = { path = "../bevy-examples/libs/bevy_shader_utils" }
-wasm-bindgen = { version = "= 0.2.81" }
-noise = "0.7"                           #Procedural Noise Generation library for Rust
+noise = "0.7"  #Procedural Noise Generation library for Rust
 iyes_loopless = "0.7.1"
 iyes_progress = "0.5.0"
 
-bevy_asset_loader = { version = "0.12.0", features = [
-    "stageless",
-] } #Needed to turn on a bunch of features in order to get assetloader to work with iyes_loopless+progress
+bevy_asset_loader = { version = "0.12.0", features = ["stageless"] }
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+[dev-dependencies]
+# TODO, add his camera system back in, its overly complicated but it works
+sly_camera_controller = { git = "https://github.com/slyedoc/sly_camera_controller", branch = "main" }
+wasm-bindgen = { version = "= 0.2.81" }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 bevy_web_fullscreen = { git = "https://github.com/ostwilkens/bevy_web_fullscreen.git" }

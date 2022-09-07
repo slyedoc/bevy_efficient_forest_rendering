@@ -31,9 +31,31 @@ use bytemuck::{Pod, Zeroable};
 
 use noise::{NoiseFn, Perlin, Seedable};
 
-use crate::camera::orbit::OrbitCamera;
-
 use super::{Chunk, DistanceCulling};
+
+pub struct ChunkGrassPlugin;
+
+impl Plugin for ChunkGrassPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugin(ExtractComponentPlugin::<ChunkGrass>::extract_visible());
+        app.add_plugin(ExtractResourcePlugin::<GrowthTextures>::default());
+        app.add_plugin(ExtractResourcePlugin::<GridConfig>::default());
+        app.add_system(update_time_for_custom_material);
+        app.add_system(grass_chunk_distance_culling);
+
+        app.sub_app_mut(RenderApp)
+            .add_render_command::<Transparent3d, DrawCustom>()
+            .init_resource::<CustomPipeline>()
+            .init_resource::<SpecializedMeshPipelines<CustomPipeline>>()
+            .init_resource::<GridConfigBindGroup>()
+            .init_resource::<GrowthTexturesBindGroup>()
+            .add_system_to_stage(RenderStage::Queue, queue_custom_pipeline)
+            .add_system_to_stage(RenderStage::Prepare, prepare_grid_config_bind_group)
+            .add_system_to_stage(RenderStage::Prepare, prepare_grass_chunk_bind_group)
+            .add_system_to_stage(RenderStage::Prepare, prepare_growth_textures_bind_group);
+    }
+}
+
 
 //Bundle
 #[derive(Bundle, Debug, Default)]
@@ -107,36 +129,15 @@ pub fn get_grass_straw_mesh() -> Mesh {
     mesh
 }
 
-pub struct ChunkGrassPlugin;
-
-impl Plugin for ChunkGrassPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugin(ExtractComponentPlugin::<ChunkGrass>::extract_visible());
-        app.add_plugin(ExtractResourcePlugin::<GrowthTextures>::default());
-        app.add_plugin(ExtractResourcePlugin::<GridConfig>::default());
-        app.add_system(update_time_for_custom_material);
-        app.add_system(grass_chunk_distance_culling);
-
-        app.sub_app_mut(RenderApp)
-            .add_render_command::<Transparent3d, DrawCustom>()
-            .init_resource::<CustomPipeline>()
-            .init_resource::<SpecializedMeshPipelines<CustomPipeline>>()
-            .init_resource::<GridConfigBindGroup>()
-            .init_resource::<GrowthTexturesBindGroup>()
-            .add_system_to_stage(RenderStage::Queue, queue_custom_pipeline)
-            .add_system_to_stage(RenderStage::Prepare, prepare_grid_config_bind_group)
-            .add_system_to_stage(RenderStage::Prepare, prepare_grass_chunk_bind_group)
-            .add_system_to_stage(RenderStage::Prepare, prepare_growth_textures_bind_group);
-    }
-}
-
-#[derive(Clone, Component, Default)]
+#[derive(Clone, Component)]
 pub struct GrowthTextures {
-    pub growth_texture_array_handle: Option<Handle<Image>>,
+    pub growth_texture_array_handle: Handle<Image>,
 }
 
-impl GrowthTextures {
-    pub fn new(images: &mut ResMut<Assets<Image>>) -> Self {
+impl FromWorld for GrowthTextures {
+    fn from_world(world: &mut World) -> Self {
+        let mut images = world.resource_mut::<Assets<Image>>();
+
         let size = 100;
         let scale = 255.0;
         let mut data = Vec::new();
@@ -167,7 +168,7 @@ impl GrowthTextures {
         );
 
         Self {
-            growth_texture_array_handle: Some(images.add(image)),
+            growth_texture_array_handle: images.add(image),
         }
     }
 }
@@ -346,8 +347,8 @@ pub fn prepare_growth_textures_bind_group(
     growth_textures: Res<GrowthTextures>,
     images: Res<RenderAssets<Image>>,
 ) {
-    if let Some(image_handle) = growth_textures.growth_texture_array_handle.as_ref() {
-        if let Some(image) = images.get(&image_handle.clone_weak()) {
+
+        if let Some(image) = images.get(&&growth_textures.growth_texture_array_handle) {
             let growth_texture_bind_group = render_device.create_bind_group(&BindGroupDescriptor {
                 layout: &custom_pipeline.growth_bind_group_layout,
                 entries: &[
@@ -367,7 +368,7 @@ pub fn prepare_growth_textures_bind_group(
 
             growth_textures_bind_group.as_mut().bind_group = Some(growth_texture_bind_group);
         }
-    }
+    
 }
 
 #[derive(Default)]
@@ -441,7 +442,6 @@ fn queue_custom_pipeline(
     meshes: Res<RenderAssets<Mesh>>,
     material_meshes: Query<(Entity, &MeshUniform, &Handle<Mesh>), With<ChunkGrass>>,
     mut views: Query<(&ExtractedView, &mut RenderPhase<Transparent3d>)>,
-    growth_textures: Res<GrowthTextures>,
 ) {
     let draw_custom = transparent_3d_draw_functions
         .read()
@@ -454,20 +454,17 @@ fn queue_custom_pipeline(
         let rangefinder = view.rangefinder3d();
         for (entity, mesh_uniform, mesh_handle) in &material_meshes {
             if let Some(mesh) = meshes.get(mesh_handle) {
-                //Only render stuff if there is a texture handle
-                if growth_textures.growth_texture_array_handle.is_some() {
-                    let key = msaa_key
-                        | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology);
-                    let pipeline = pipelines
-                        .specialize(&mut pipeline_cache, &custom_pipeline, key, &mesh.layout)
-                        .unwrap();
-                    transparent_phase.add(Transparent3d {
-                        entity,
-                        pipeline,
-                        draw_function: draw_custom,
-                        distance: rangefinder.distance(&mesh_uniform.transform),
-                    });
-                }
+                let key = msaa_key
+                    | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology);
+                let pipeline = pipelines
+                    .specialize(&mut pipeline_cache, &custom_pipeline, key, &mesh.layout)
+                    .unwrap();
+                transparent_phase.add(Transparent3d {
+                    entity,
+                    pipeline,
+                    draw_function: draw_custom,
+                    distance: rangefinder.distance(&mesh_uniform.transform),
+                });
             }
         }
     }
