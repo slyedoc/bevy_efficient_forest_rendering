@@ -17,21 +17,22 @@ use bevy::{
         Extract, RenderApp, RenderStage,
     },
 };
+use bevy_inspector_egui::{Inspectable, RegisterInspectable};
 use rand::Rng;
-use super::{Chunk, DistanceCulling};
-
-
+use super::{DistanceCulling};
 pub struct ChunkInstancingPlugin;
 
 impl Plugin for ChunkInstancingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(chunk_distance_culling);
+        app.add_system(chunk_distance_culling)
+        .register_inspectable::<Instance>()
+        .register_inspectable::<ChunkInstancing>();
 
         app.sub_app_mut(RenderApp)
             .add_render_command::<Transparent3d, DrawCustom>()
             .init_resource::<CustomPipeline>()
             .init_resource::<SpecializedMeshPipelines<CustomPipeline>>()
-            .add_system_to_stage(RenderStage::Extract, extract_chunk_instancings)
+            .add_system_to_stage(RenderStage::Extract, extract_chunk_instancies)
             .add_system_to_stage(
                 RenderStage::Prepare,
                 prepare_chunk_instancing_instance_buffers,
@@ -54,20 +55,21 @@ pub struct ChunkInstancingBundle {
     pub transform: Transform,
     /// The global transform of the entity.
     pub global_transform: GlobalTransform,
-    pub mesh_handle: Handle<Mesh>,
+    pub mesh: Handle<Mesh>,
     pub aabb: Aabb,
     pub chunk_instancing: ChunkInstancing,
     pub distance_culling: DistanceCulling,
-    pub chunk: Chunk,
 }
 
 fn chunk_distance_culling(
-    mut query: Query<(&Transform, &mut Visibility, &DistanceCulling)>,
-    query_camera: Query<&Transform, With<Camera>>,
+    mut query: Query<(&GlobalTransform, &mut Visibility, &DistanceCulling)>,
+    query_camera: Query<&GlobalTransform, With<Camera>>,
 ) {
-    if let Ok(camera_pos) = query_camera.get_single() {
-        for (transform, mut visability, distance_culling) in query.iter_mut() {
-            if camera_pos.translation.distance(transform.translation) > distance_culling.distance {
+    if let Ok(camera_global_transform) = query_camera.get_single() {
+        let camera_trans = camera_global_transform.compute_transform();
+        for (global_transform, mut visability, distance_culling) in query.iter_mut() {
+            let transform = global_transform.compute_transform();
+            if camera_trans.translation.distance(transform.translation) > distance_culling.distance {
                 visability.is_visible = false;
             } else {
                 visability.is_visible = true;
@@ -76,12 +78,12 @@ fn chunk_distance_culling(
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Inspectable, Debug, Default)]
 pub struct Instance {
     pub pos_xyz: [f32; 4],
 }
 
-#[derive(Component, Clone, Debug, Default)]
+#[derive(Component, Inspectable, Clone, Debug, Default)]
 pub struct ChunkInstancing {
     pub instances: Vec<Instance>, //[x,y,z, scale] Lower performance if using full Transforms
     pub base_color_texture: Handle<Image>,
@@ -99,11 +101,11 @@ impl ChunkInstancing {
         let mut instances = Vec::new();
         for _ in 0..nr_instances {
             let x = rng.gen::<f32>() * chunk_size;
-            let y = rng.gen::<f32>() * chunk_size;
+            let z = rng.gen::<f32>() * chunk_size;
             let scale = rng.gen::<f32>() * 0.5 + 0.5;
 
             instances.push(Instance {
-                pos_xyz: [x, y, 0.0, scale],
+                pos_xyz: [x, 0.0, z, scale],
             });
         }
 
@@ -131,7 +133,7 @@ impl ChunkInstancing {
 // ██████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 
 //Make custom extract func in order to not clone instance data twice when using convinient abstract types for world side components
-fn extract_chunk_instancings(
+fn extract_chunk_instancies(
     mut commands: Commands,
     mut previous_len: Local<usize>,
     mut query: Extract<Query<(Entity, &ComputedVisibility, &ChunkInstancing)>>,
@@ -172,10 +174,9 @@ struct GpuChunkBindGroupData {
 impl ChunkInstancing {
     fn to_raw_instances(&self) -> GpuInstances {
         GpuInstances(
-            (&self.instances)
-                .into_iter()
+            self.instances.iter()
                 .map(|v| GpuInstance {
-                    pos_xyz: v.pos_xyz.clone(),
+                    pos_xyz: v.pos_xyz,
                 })
                 .collect(),
         )
@@ -268,7 +269,7 @@ pub fn prepare_textures_bind_group(
     gpu_images: Res<RenderAssets<Image>>,
 ) {
     for (e, texture_handle) in image_query.iter() {
-        let gpu_image = gpu_images.get(&texture_handle).unwrap();
+        let gpu_image = gpu_images.get(texture_handle).unwrap();
 
         let texture_bind_group = render_device.create_bind_group(&BindGroupDescriptor {
             layout: &custom_pipeline.texture_bind_group_layout,
@@ -329,7 +330,7 @@ fn queue_custom(
     for (view, mut transparent_phase) in &mut views {
         let rangefinder = view.rangefinder3d();
         for (entity, mesh_uniform, mesh_handle, image_handle) in &material_meshes {
-            if let (Some(mesh), Some(_)) = (meshes.get(mesh_handle), gpu_images.get(&image_handle))
+            if let (Some(mesh), Some(_)) = (meshes.get(mesh_handle), gpu_images.get(image_handle))
             {
                 let key =
                     msaa_key | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology);
@@ -495,9 +496,7 @@ impl<const I: usize> EntityRenderCommand for SetTextureBindGroup<I> {
     ) -> RenderCommandResult {
         if let Ok(bind_group) = bind_group_query.get_inner(item) {
             pass.set_bind_group(I, &bind_group.0, &[]);
-            // return RenderCommandResult::Success;
         }
-
         RenderCommandResult::Success
     }
 }
@@ -514,7 +513,6 @@ impl<const I: usize> EntityRenderCommand for SetChunkInstancingBindGroup<I> {
     ) -> RenderCommandResult {
         if let Ok(bind_group) = bind_group_query.get_inner(item) {
             pass.set_bind_group(I, &bind_group.0, &[]);
-            // return RenderCommandResult::Success;
         }
 
         RenderCommandResult::Success

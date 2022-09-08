@@ -59,15 +59,16 @@ fn vertex(vertex: Vertex,
     let rand_scale = rand(vec2<f32>(instance.xyz.y, 42.546*sin(instance.xyz.x)), 3.0)*0.2+0.9;
     let transformed_position = plant_chunk.model_transform*vec4<f32>(vertex.position, 1.0)*instance.xyz.w*rand_scale;
 
-    let rot_z = rand(vec2<f32>(instance.xyz.x, 10.1512515*cos(instance.xyz.y)), 1.0)*3.1415*2.0;
+    let rot_y = rand(vec2<f32>(instance.xyz.x, 10.1512515*cos(instance.xyz.z)),
+         1.0)*3.1415*2.0;
 
-    let rot_mat = mat2x2<f32>(vec2<f32>(cos(rot_z), -sin(rot_z)), vec2<f32>(sin(rot_z), cos(rot_z)));
-    let rotated_xy = rot_mat*transformed_position.xy;
-    let position= vec4<f32>(rotated_xy.x+instance.xyz.x, rotated_xy.y+instance.xyz.y, transformed_position.z+instance.xyz.z, 1.0);
+    let rot_mat = mat2x2<f32>(vec2<f32>(cos(rot_y), -sin(rot_y)), vec2<f32>(sin(rot_y), cos(rot_y)));
+    let rotated_xz = rot_mat*transformed_position.xz;
+    let position= vec4<f32>(transformed_position.x+instance.xyz.x, transformed_position.y+instance.xyz.y, transformed_position.z+instance.xyz.z, 1.0);
 
     //Somthing not right about the normals?
     let transformed_normals = plant_chunk.model_transform*vec4<f32>(vertex.normal, 1.0);
-    let rotated_normals = rot_mat*transformed_normals.xy;
+    let rotated_normals = transformed_normals.xy;
     let normals= vec3<f32>(rotated_normals.x,rotated_normals.y,transformed_normals.z);
 
     out.world_position = mesh_position_local_to_world(mesh.model, position);

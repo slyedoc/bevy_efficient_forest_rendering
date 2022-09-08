@@ -16,8 +16,6 @@ impl Plugin for OverlayPlugin {
 #[derive(Component)]
 struct FpsText;
 
-pub const UI_SIZE: f32 = 30.0;
-
 fn setup_overlay(mut commands: Commands, asset_server: ResMut<AssetServer>) {
     let ui_font = asset_server.load("fonts/FiraSans-Bold.ttf");
 
@@ -41,7 +39,7 @@ fn setup_overlay(mut commands: Commands, asset_server: ResMut<AssetServer>) {
                         value: "FPS: ".to_string(),
                         style: TextStyle {
                             font: ui_font.clone(),
-                            font_size: UI_SIZE,
+                            font_size: 30.0,
                             color: Color::WHITE,
                         },
                     },
@@ -49,7 +47,7 @@ fn setup_overlay(mut commands: Commands, asset_server: ResMut<AssetServer>) {
                         value: "".to_string(),
                         style: TextStyle {
                             font: ui_font.clone(),
-                            font_size: UI_SIZE,
+                            font_size: 30.0,
                             color: Color::GOLD,
                         },
                     },

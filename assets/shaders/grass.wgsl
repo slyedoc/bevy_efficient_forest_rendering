@@ -122,7 +122,6 @@ var growth_textures: texture_2d_array<f32>;
 var growth_sampler: sampler;
 
 
-
  struct GpuGridConfig {
     grid_center_xy: vec2<f32>, //Assume axis aligned grid otherwise need to calc homogenous coordinate matrix
     grid_half_extents: vec2<f32>,
@@ -157,85 +156,76 @@ fn rand(co: vec2<f32>)-> f32{
 }
 
 
-
-
 @vertex
 fn vertex(vertex: Vertex,
 ) -> VertexOutput {
     var out: VertexOutput;
 
-
     //Random Base World position
     // let seed = sqrt(material.chunk_xy.x*material.chunk_xy.y+1.1);
     let x = (rand(vec2<f32>(sin(f32(vertex.instance_index)), 1.1512515*cos(f32(vertex.instance_index))))*material.chunk_half_extents.x*2.0);
-    let y = (rand(vec2<f32>(0.902415*sin(f32(vertex.instance_index)), cos(f32(vertex.instance_index))))*material.chunk_half_extents.y*2.0);
+    let z = (rand(vec2<f32>(0.902415*sin(f32(vertex.instance_index)), cos(f32(vertex.instance_index))))*material.chunk_half_extents.y*2.0);
 
-    let base_position = vec4<f32>(x,y,0.0,1.0);
+    let base_position = vec4<f32>(x,0.0,z,1.0);
     let base_position_world = mesh_position_local_to_world(mesh.model, base_position);
 
     //Random Rotate
-    let rot_z = (rand(vec2<f32>(12.554215, f32(vertex.instance_index)))*30.1415);
+    let rot_z = rand(vec2<f32>(12.554215, f32(vertex.instance_index)))*30.1415;
     let rot_mat = mat2x2<f32>(vec2<f32>(cos(rot_z), -sin(rot_z)), vec2<f32>(sin(rot_z), cos(rot_z)));
-    let rotated_xy = rot_mat*vertex.position.xy*material.scale_modifier.x;
-    let local_z = vertex.position.z*material.scale_modifier.x*material.height_modifier.x;
-    out.world_position= vec4<f32>(rotated_xy.x+base_position_world.x, rotated_xy.y+base_position_world.y, local_z+base_position_world.z, 1.0);
-    
+    let rotated_xy = rot_mat*vertex.position.xz*material.scale_modifier.x;
+    let local_y = vertex.position.y*material.scale_modifier.x*material.height_modifier.x;    
+    out.world_position= vec4<f32>(rotated_xy.x+base_position_world.x, local_y+base_position_world.y, rotated_xy.y+ base_position_world.z, 1.0);
 
     //Growth height adjustments
-    let growth_uv = (base_position_world.xy-grid_config.grid_center_xy+grid_config.grid_half_extents)/(grid_config.grid_half_extents*2.0);
+    let growth_uv = (base_position_world.xz-grid_config.grid_center_xy+grid_config.grid_half_extents)/(grid_config.grid_half_extents*2.0);
     out.uv = growth_uv; // out.uv = vertex.uv;
     let growth = textureSampleLevel(growth_textures,growth_sampler, growth_uv,material.growth_texture_id.x, 0.0).x;
-    out.world_position.z = out.world_position.z*growth;
+    out.world_position.y = out.world_position.y*growth;
 
+    // TODO: This breaks and leaves black static grass
     // "Hide" grass under map (This can be done better, probably by sampling 5x times and adjusting nr_instances based on texture sum over chunk)
-    if growth<0.5 && growth/0.5<rand(vec2<f32>(f32(vertex.instance_index), 18.956724*cos(f32(vertex.instance_index)*2.9515))){
-        out.world_position.z = out.world_position.z+(-10.0);
-        out.clip_position = mesh_position_world_to_clip(out.world_position);
-        return out;
-    } 
+    // if growth<0.5 && growth/0.5<rand(vec2<f32>(f32(vertex.instance_index), 18.956724*cos(f32(vertex.instance_index)*2.9515))){
+    //     out.world_position.z = out.world_position.z+(-10.0);
+    //     out.clip_position = mesh_position_world_to_clip(out.world_position);
+    //     return out;
+    // } 
 
     //Straw distortion
-    var scale = 0.1*vertex.position.z*material.height_modifier.x*material.scale_modifier.x;
-    var noise_x = (rand(vec2<f32>(x,y+local_z))+(-0.5))*scale;
-    var noise_y = (rand(vec2<f32>(x,y+local_z))+(-0.5))*scale;
+    var scale = 0.1*vertex.position.y*material.height_modifier.x*material.scale_modifier.x;
+    var noise_x = (rand(vec2<f32>(x,z+local_y))+(-0.5))*scale;
+    var noise_z = (rand(vec2<f32>(x,z+local_y))+(-0.5))*scale;
     out.world_position.x = out.world_position.x+noise_x;
-    out.world_position.y = out.world_position.y+noise_y;
-
+    out.world_position.z = out.world_position.z+noise_z;
 
 
     //Wind swing effect
     let time_wave = sin(material.time / 1.0 + out.world_position.x/10.0);
-    out.world_position.x = out.world_position.x+time_wave*0.4*out.world_position.z;
+    out.world_position.x = out.world_position.x+time_wave*0.4*out.world_position.y;
 
     //Grass turbulance effect
-    let freq = 2.0;
-    let time_wave_x = cos(material.time * freq + base_position.x);
-    let time_wave_y = sin(material.time * freq + base_position.y);
-    var amp = .2*out.world_position.z;
-    var perl_freq = 10.0;
-    var perl_noise_x = perlinNoise3(vec3<f32>(base_position.x*perl_freq+time_wave_x, base_position.y*perl_freq, vertex.position.z*perl_freq))*amp;
-    var perl_noise_y = perlinNoise3(vec3<f32>(base_position.x*perl_freq, base_position.y*perl_freq+time_wave_y, vertex.position.z*perl_freq))*amp;
-
+     let freq = 2.0;
+     let time_wave_x = cos(material.time * freq + base_position.x);
+     let time_wave_z = sin(material.time * freq + base_position.z);
+     var amp = .2*out.world_position.y;
+     var perl_freq = 10.0;
+     var perl_noise_x = perlinNoise3(vec3<f32>(base_position.x*perl_freq+time_wave_x, vertex.position.y*perl_freq, base_position.z*perl_freq))*amp;
+     var perl_noise_z = perlinNoise3(vec3<f32>(base_position.x*perl_freq,  vertex.position.y*perl_freq, base_position.z*perl_freq+time_wave_z))*amp;
 
     //Grass height noise (Might not be needed)
     var amp = 0.3;
     var freq = 0.2;
-    var perl_noise_height = perlinNoise3(vec3<f32>(out.world_position.x*freq, out.world_position.y*freq, vertex.position.z*freq/10.0))*amp*out.world_position.z;
+    var perl_noise_height = perlinNoise3(vec3<f32>(out.world_position.x*freq,  vertex.position.y*freq/10.0, out.world_position.z*freq))*amp*out.world_position.y;
 
-    out.world_position = vec4<f32>(out.world_position.x+perl_noise_x, out.world_position.y+perl_noise_y, out.world_position.z+perl_noise_height, out.world_position.w);
-
+    out.world_position =  out.world_position + vec4<f32>(perl_noise_x, perl_noise_height, perl_noise_z, 0.0);
 
     //Color
     let tip_color = mix(material.unhealthy_tip_color, material.healthy_tip_color, growth);
     let middle_color = mix(material.unhealthy_middle_color, material.healthy_middle_color, growth);
     let base_color = mix(material.unhealthy_base_color, material.healthy_base_color, growth);
 
-
-
-
-    if (vertex.position.z > 0.8){
+    if (vertex.position.y > 0.8){
         out.color =  tip_color;
-    } else if (vertex.position.z > 0.3){
+    } else if (vertex.position.y > 0.3){
         out.color =  middle_color;
     }else{
         out.color =  base_color;

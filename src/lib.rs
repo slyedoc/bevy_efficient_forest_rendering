@@ -1,9 +1,23 @@
+#![allow(clippy::type_complexity)]
+
 use bevy::prelude::*;
+use bevy_inspector_egui::{Inspectable, RegisterInspectable};
 
 pub mod chunk_grass;
 pub mod chunk_instancing;
 
-#[derive(Component, Debug)]
+pub struct ForestRenderingPlugin;
+
+impl Plugin for ForestRenderingPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .add_plugin(chunk_grass::ChunkGrassPlugin)
+            .add_plugin(chunk_instancing::ChunkInstancingPlugin)
+            .register_inspectable::<DistanceCulling>();
+    }
+}
+
+#[derive(Component, Inspectable, Debug)]
 pub struct DistanceCulling {
     pub distance: f32,
 }
@@ -13,9 +27,3 @@ impl Default for DistanceCulling {
         Self { distance: 1000.0 }
     }
 }
-
-#[derive(Component, Default, Debug, Clone)]
-pub struct Chunk {
-    pub chunk_xy: [u32; 2],
-}
-

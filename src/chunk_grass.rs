@@ -31,17 +31,18 @@ use bytemuck::{Pod, Zeroable};
 
 use noise::{NoiseFn, Perlin, Seedable};
 
-use super::{Chunk, DistanceCulling};
+use super::{DistanceCulling};
 
 pub struct ChunkGrassPlugin;
 
 impl Plugin for ChunkGrassPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(ExtractComponentPlugin::<ChunkGrass>::extract_visible());
-        app.add_plugin(ExtractResourcePlugin::<GrowthTextures>::default());
-        app.add_plugin(ExtractResourcePlugin::<GridConfig>::default());
-        app.add_system(update_time_for_custom_material);
-        app.add_system(grass_chunk_distance_culling);
+        app.add_plugin(ExtractComponentPlugin::<ChunkGrass>::extract_visible())
+            .add_plugin(ExtractResourcePlugin::<GrowthTextures>::default())
+            .add_plugin(ExtractResourcePlugin::<GridConfig>::default())
+            .init_resource::<GrowthTextures>()
+            .add_system(update_time_for_custom_material)
+            .add_system(grass_chunk_distance_culling);
 
         app.sub_app_mut(RenderApp)
             .add_render_command::<Transparent3d, DrawCustom>()
@@ -56,7 +57,6 @@ impl Plugin for ChunkGrassPlugin {
     }
 }
 
-
 //Bundle
 #[derive(Bundle, Debug, Default)]
 pub struct ChunkGrassBundle {
@@ -68,11 +68,11 @@ pub struct ChunkGrassBundle {
     pub transform: Transform,
     /// The global transform of the entity.
     pub global_transform: GlobalTransform,
-    pub mesh_handle: Handle<Mesh>,
+    pub mesh: Handle<Mesh>,
     pub aabb: Aabb,
     pub chunk_grass: ChunkGrass,
     pub distance_culling: DistanceCulling,
-    pub chunk: Chunk,
+    pub material: Handle<StandardMaterial>,
 }
 
 fn update_time_for_custom_material(mut grass_chunks: Query<&mut ChunkGrass>, time: Res<Time>) {
@@ -82,51 +82,20 @@ fn update_time_for_custom_material(mut grass_chunks: Query<&mut ChunkGrass>, tim
 }
 
 fn grass_chunk_distance_culling(
-    mut query: Query<(&Transform, &mut Visibility, &DistanceCulling)>,
-    query_camera: Query<&Transform, With<Camera>>,
+    mut query: Query<(&GlobalTransform, &mut Visibility, &DistanceCulling)>,
+    query_camera: Query<&GlobalTransform, With<Camera>>,
 ) {
-    if let Ok(camera_pos) = query_camera.get_single() {
-        for (transform, mut visability, distance_culling) in query.iter_mut() {
-            if camera_pos.translation.distance(transform.translation) > distance_culling.distance {
+    if let Ok(camera_global_trans) = query_camera.get_single() {
+        let camera_trans = camera_global_trans.compute_transform();
+        for (global_trans, mut visability, distance_culling) in query.iter_mut() {
+            let transform = global_trans.compute_transform();
+            if camera_trans.translation.distance(transform.translation) > distance_culling.distance {
                 visability.is_visible = false;
             } else {
                 visability.is_visible = true;
             }
         }
     }
-}
-
-pub fn get_grass_straw_mesh() -> Mesh {
-    let mut positions = Vec::with_capacity(5);
-    let mut normals = Vec::with_capacity(5);
-    let mut uvs = Vec::with_capacity(5);
-
-    positions.push([0., 0., 1.0]);
-    positions.push([0.05, 0.0, 0.5]);
-    positions.push([-0.05, 0.0, 0.5]);
-    positions.push([0.05, 0.0, 0.0]);
-    positions.push([-0.05, 0.0, 0.0]);
-
-    normals.push([0.0, 1.0, 0.0]);
-    normals.push([0.0, 1.0, 0.0]);
-    normals.push([0.0, 1.0, 0.0]);
-    normals.push([0.0, 1.0, 0.0]);
-    normals.push([0.0, 1.0, 0.0]);
-
-    uvs.push([0.5, 1.0]);
-    uvs.push([1.0, 0.5]);
-    uvs.push([0.0, 0.5]);
-    uvs.push([1.0, 0.0]);
-    uvs.push([0.0, 0.0]);
-
-    let indices = vec![0, 1, 2, 1, 3, 2, 2, 3, 4];
-
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.set_indices(Some(Indices::U32(indices)));
-    mesh
 }
 
 #[derive(Clone, Component)]
@@ -180,7 +149,7 @@ pub struct GridConfig {
 }
 
 impl GridConfig {
-    pub fn get_size(self: &Self) -> Vec2 {
+    pub fn get_size(&self) -> Vec2 {
         Vec2::new(
             self.grid_half_extents[0] * 2.0,
             self.grid_half_extents[1] * 2.0,
@@ -228,6 +197,7 @@ impl ExtractComponent for ChunkGrass {
         item.clone()
     }
 }
+
 
 impl ExtractResource for GrowthTextures {
     type Source = GrowthTextures;
@@ -287,17 +257,17 @@ pub struct GpuChunkGrass {
 }
 
 impl ChunkGrass {
-    fn to_raw(self: &Self) -> GpuChunkGrass {
+    fn to_raw(&self) -> GpuChunkGrass {
         GpuChunkGrass {
             time: [self.time, 0.0, 0.0, 0.0],
             // wind_dir: [0.5, -0.5],
             // wind_power: 1.0,
-            healthy_tip_color: self.healthy_tip_color.as_linear_rgba_f32().into(),
-            healthy_middle_color: self.healthy_middle_color.as_linear_rgba_f32().into(),
-            healthy_base_color: self.healthy_base_color.as_linear_rgba_f32().into(),
-            unhealthy_tip_color: self.unhealthy_tip_color.as_linear_rgba_f32().into(),
-            unhealthy_middle_color: self.unhealthy_middle_color.as_linear_rgba_f32().into(),
-            unhealthy_base_color: self.unhealthy_base_color.as_linear_rgba_f32().into(),
+            healthy_tip_color: self.healthy_tip_color.as_linear_rgba_f32(),
+            healthy_middle_color: self.healthy_middle_color.as_linear_rgba_f32(),
+            healthy_base_color: self.healthy_base_color.as_linear_rgba_f32(),
+            unhealthy_tip_color: self.unhealthy_tip_color.as_linear_rgba_f32(),
+            unhealthy_middle_color: self.unhealthy_middle_color.as_linear_rgba_f32(),
+            unhealthy_base_color: self.unhealthy_base_color.as_linear_rgba_f32(),
 
             chunk_xy: self.chunk_xy,
             chunk_half_extents: self.chunk_half_extents,
@@ -347,28 +317,26 @@ pub fn prepare_growth_textures_bind_group(
     growth_textures: Res<GrowthTextures>,
     images: Res<RenderAssets<Image>>,
 ) {
+    if let Some(image) = images.get(&growth_textures.growth_texture_array_handle) {
+        let growth_texture_bind_group = render_device.create_bind_group(&BindGroupDescriptor {
+            layout: &custom_pipeline.growth_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&image.texture_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(
+                        &render_device.create_sampler(&ImageSampler::linear_descriptor()),
+                    ),
+                },
+            ],
+            label: Some("growth_texture_bind_group"),
+        });
 
-        if let Some(image) = images.get(&&growth_textures.growth_texture_array_handle) {
-            let growth_texture_bind_group = render_device.create_bind_group(&BindGroupDescriptor {
-                layout: &custom_pipeline.growth_bind_group_layout,
-                entries: &[
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: BindingResource::TextureView(&image.texture_view),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: BindingResource::Sampler(
-                            &render_device.create_sampler(&ImageSampler::linear_descriptor()),
-                        ),
-                    },
-                ],
-                label: Some("growth_texture_bind_group"),
-            });
-
-            growth_textures_bind_group.as_mut().bind_group = Some(growth_texture_bind_group);
-        }
-    
+        growth_textures_bind_group.as_mut().bind_group = Some(growth_texture_bind_group);
+    }
 }
 
 #[derive(Default)]
@@ -384,10 +352,10 @@ struct GpuGridConfig {
 }
 
 impl GridConfig {
-    fn to_raw(self: &Self) -> GpuGridConfig {
+    fn to_raw(&self) -> GpuGridConfig {
         GpuGridConfig {
-            grid_center_xy: self.grid_center_xy.clone(),
-            grid_half_extents: self.grid_half_extents.clone(),
+            grid_center_xy: self.grid_center_xy,
+            grid_half_extents: self.grid_half_extents,
         }
     }
 }
@@ -398,7 +366,7 @@ fn prepare_grid_config_bind_group(
     grid_config: Res<GridConfig>,
     custom_pipeline: Res<CustomPipeline>,
 ) {
-    if !grid_config_bind_group_res.grid_config_bind_group.is_some() {
+    if grid_config_bind_group_res.grid_config_bind_group.is_none() {
         let grid_config_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("grid_config_buffer"),
             contents: bytemuck::cast_slice(&[grid_config.to_raw()]),
@@ -454,8 +422,8 @@ fn queue_custom_pipeline(
         let rangefinder = view.rangefinder3d();
         for (entity, mesh_uniform, mesh_handle) in &material_meshes {
             if let Some(mesh) = meshes.get(mesh_handle) {
-                let key = msaa_key
-                    | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology);
+                let key =
+                    msaa_key | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology);
                 let pipeline = pipelines
                     .specialize(&mut pipeline_cache, &custom_pipeline, key, &mesh.layout)
                     .unwrap();
@@ -669,7 +637,7 @@ impl<const I: usize> EntityRenderCommand for SetGridConfigBindGroup<I> {
     ) -> RenderCommandResult {
         pass.set_bind_group(
             I,
-            &bind_group_res
+            bind_group_res
                 .into_inner()
                 .grid_config_bind_group
                 .as_ref()
